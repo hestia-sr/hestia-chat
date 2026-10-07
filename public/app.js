@@ -278,12 +278,31 @@ async function send() {
   $("btn-send").disabled = true;
   var aiMsg = { role: "assistant", content: "" };
   chat.messages.push(aiMsg);
+  // Retry otomatis 2x jika stream gagal/terputus di tengah jalan
+  var full = "";
+  var lastErr = null;
+  for (var attempt = 0; attempt < 3; attempt++) {
+    try {
+      if (attempt > 0) {
+        bubble.innerHTML = "<span class=\"typing\"><span></span><span></span><span></span></span>";
+      }
+      full = await streamChat(model, apiMessages, function (partial) {
+        aiMsg.content = partial;
+        bubble.innerHTML = md(partial);
+        $("chat-area").scrollTop = $("chat-area").scrollHeight;
+      });
+      // anggap gagal jika stream selesai tapi konten kosong
+      if (!full || !full.trim()) throw new Error("respons kosong dari bridge");
+      lastErr = null;
+      break;
+    } catch (e) {
+      lastErr = e;
+      // jeda singkat sebelum retry
+      await new Promise(function (r) { setTimeout(r, 800); });
+    }
+  }
   try {
-    var full = await streamChat(model, apiMessages, function (partial) {
-      aiMsg.content = partial;
-      bubble.innerHTML = md(partial);
-      $("chat-area").scrollTop = $("chat-area").scrollHeight;
-    });
+    if (lastErr) throw lastErr;
     aiMsg.content = full;
     bubble.innerHTML = md(full);
   } catch (e) {
